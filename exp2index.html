@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>String Search Showdown — Naive vs KMP vs Rabin-Karp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0F0D;
+  --panel:#101815;
+  --panel-2:#0D1512;
+  --grid:#1E2B26;
+  --amber:#FFB000;
+  --amber-dim:#8a6300;
+  --naive:#FF6B4A;
+  --kmp:#4AC9FF;
+  --rk:#B98AFF;
+  --match:#5FE3A3;
+  --mismatch:#FF5A5A;
+  --text:#E8EDE9;
+  --muted:#7C8B84;
+  --mono:'IBM Plex Mono', monospace;
+  --sans:'IBM Plex Sans', sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,176,0,0.07), transparent),
+    radial-gradient(ellipse 700px 500px at 100% 20%, rgba(74,201,255,0.05), transparent),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{ background:var(--amber); color:#0A0F0D; }
+a{color:var(--amber);}
+
+.wrap{ max-width:1080px; margin:0 auto; padding:0 24px; }
+
+/* ---------- HERO ---------- */
+.hero{
+  padding:72px 24px 40px;
+  border-bottom:1px solid var(--grid);
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:"";
+  position:absolute; inset:0;
+  background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+  pointer-events:none;
+}
+.eyebrow{
+  font-family:var(--mono); font-size:12px; letter-spacing:0.18em; text-transform:uppercase;
+  color:var(--amber); margin:0 0 18px; display:flex; align-items:center; gap:10px;
+}
+.eyebrow::before{ content:""; width:8px; height:8px; background:var(--amber); border-radius:50%; box-shadow:0 0 10px var(--amber); animation:blink 1.6s infinite; }
+@keyframes blink{ 50%{opacity:0.25;} }
+.hero h1{
+  font-family:var(--mono); font-weight:700; font-size:clamp(32px,5.5vw,58px);
+  margin:0 0 18px; line-height:1.05; letter-spacing:-0.01em;
+  max-width:820px;
+}
+.hero h1 .hl-naive{color:var(--naive);}
+.hero h1 .hl-kmp{color:var(--kmp);}
+.hero h1 .hl-rk{color:var(--rk);}
+.hero p.sub{
+  max-width:640px; color:var(--muted); font-size:17px; margin:0 0 6px;
+}
+.hero .meta{ font-family:var(--mono); font-size:12.5px; color:var(--muted); margin-top:28px; display:flex; gap:26px; flex-wrap:wrap; }
+.hero .meta b{ color:var(--text); }
+
+/* ---------- SECTION HEADERS ---------- */
+section{ padding:56px 24px; border-bottom:1px solid var(--grid); }
+.sec-head{ margin-bottom:28px; }
+.sec-head .tag{ font-family:var(--mono); font-size:11.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); }
+.sec-head h2{ font-family:var(--mono); font-size:26px; margin:6px 0 8px; font-weight:600; }
+.sec-head p{ color:var(--muted); max-width:640px; margin:0; font-size:15px; }
+
+/* ---------- CONTROLS ---------- */
+.controls{
+  display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
+  background:var(--panel); border:1px solid var(--grid); border-radius:10px; padding:20px;
+  margin-bottom:28px;
+}
+.field{ display:flex; flex-direction:column; gap:6px; }
+.field label{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); }
+.field input[type=text]{
+  background:var(--panel-2); border:1px solid var(--grid); color:var(--text);
+  font-family:var(--mono); font-size:14px; padding:9px 12px; border-radius:6px; width:280px;
+  outline:none; transition:border-color .15s;
+}
+.field input[type=text]:focus{ border-color:var(--amber); }
+.field.pattern input{ width:150px; }
+.btnrow{ display:flex; gap:8px; margin-left:auto; align-items:center; flex-wrap:wrap; }
+button{
+  font-family:var(--mono); font-size:13px; letter-spacing:0.03em;
+  border-radius:6px; border:1px solid var(--grid); padding:9px 16px;
+  background:var(--panel-2); color:var(--text); cursor:pointer;
+  transition:all .15s;
+}
+button:hover{ border-color:var(--amber); color:var(--amber); }
+button.primary{ background:var(--amber); color:#12100a; border-color:var(--amber); font-weight:600; }
+button.primary:hover{ background:#ffc23d; color:#12100a; }
+button:disabled{ opacity:0.35; cursor:not-allowed; }
+.speedfield{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--muted); }
+.speedfield input[type=range]{ width:100px; accent-color:var(--amber); }
+.errmsg{ font-family:var(--mono); font-size:12px; color:var(--mismatch); margin-top:6px; min-height:16px; }
+
+/* ---------- LANES ---------- */
+.lane{
+  background:var(--panel); border:1px solid var(--grid); border-radius:10px;
+  padding:20px 20px 18px; margin-bottom:16px; position:relative; overflow:hidden;
+}
+.lane::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent); }
+.lane.naive{ --accent:var(--naive); }
+.lane.kmp{ --accent:var(--kmp); }
+.lane.rk{ --accent:var(--rk); }
+.lane-top{ display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.lane-title{ font-family:var(--mono); font-weight:700; font-size:15px; color:var(--accent); display:flex; align-items:center; gap:8px; }
+.lane-title .full{ color:var(--muted); font-weight:400; font-size:12px; }
+.lane-stats{ font-family:var(--mono); font-size:12.5px; color:var(--muted); display:flex; gap:16px; }
+.lane-stats b{ color:var(--text); font-size:15px; }
+.lane-stats .cmp-num{ color:var(--accent); }
+
+.scrollrow{ overflow-x:auto; padding-bottom:6px; }
+.rows{ display:inline-flex; flex-direction:column; gap:3px; min-width:100%; }
+.charrow{ display:flex; gap:3px; position:relative; }
+.cell{
+  font-family:var(--mono); font-size:13px; width:24px; height:26px; flex:0 0 24px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--panel-2); border:1px solid var(--grid); border-radius:4px;
+  color:var(--muted); transition:all .12s; position:relative;
+}
+.cell.idx{ font-size:9px; color:#4b5a54; background:transparent; border:none; height:14px; }
+.cell.p-empty{ background:transparent; border-color:transparent; }
+.cell.cur{ border-color:var(--accent); color:var(--text); box-shadow:0 0 0 1px var(--accent); }
+.cell.hit{ background:rgba(95,227,163,0.18); border-color:var(--match); color:var(--match); }
+.cell.miss{ background:rgba(255,90,90,0.18); border-color:var(--mismatch); color:var(--mismatch); animation:shake .25s; }
+.cell.matched{ background:var(--match); color:#08140d; border-color:var(--match); font-weight:700; }
+@keyframes shake{ 0%,100%{transform:translateX(0);} 30%{transform:translateX(-2px);} 60%{transform:translateX(2px);} }
+
+.log{
+  font-family:var(--mono); font-size:12.5px; color:var(--muted);
+  margin-top:12px; padding:10px 12px; background:var(--panel-2); border-radius:6px;
+  border:1px dashed var(--grid); min-height:20px;
+}
+.log b{ color:var(--accent); }
+.log .ok{ color:var(--match); }
+.log .bad{ color:var(--mismatch); }
+
+.matchlist{ font-family:var(--mono); font-size:11.5px; color:var(--muted); margin-top:8px; }
+.matchlist .pill{ display:inline-block; background:rgba(95,227,163,0.12); color:var(--match); border:1px solid rgba(95,227,163,0.35); border-radius:20px; padding:2px 9px; margin:2px 4px 2px 0; }
+
+/* ---------- WINNER BANNER ---------- */
+.banner{
+  font-family:var(--mono); text-align:center; padding:18px; border-radius:10px;
+  border:1px solid var(--amber-dim); background:rgba(255,176,0,0.06); color:var(--amber);
+  font-size:14px; letter-spacing:0.03em; opacity:0; transform:translateY(6px);
+  transition:all .35s; margin-top:6px;
+}
+.banner.show{ opacity:1; transform:translateY(0); }
+.banner b{ font-size:16px; }
+
+/* ---------- HOW EACH WORKS ---------- */
+.cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+@media(max-width:820px){ .cards{ grid-template-columns:1fr; } }
+.card{
+  background:var(--panel); border:1px solid var(--grid); border-top:3px solid var(--c);
+  border-radius:10px; padding:22px;
+}
+.card h3{ font-family:var(--mono); font-size:16px; margin:0 0 10px; color:var(--c); }
+.card p{ font-size:14px; color:var(--muted); margin:0 0 14px; }
+.card .complexity{ font-family:var(--mono); font-size:12px; background:var(--panel-2); border:1px solid var(--grid); border-radius:6px; padding:10px 12px; }
+.card .complexity div{ display:flex; justify-content:space-between; margin:3px 0; color:var(--muted); }
+.card .complexity div b{ color:var(--text); }
+
+/* ---------- BENCHMARK ---------- */
+.benchmeta{ font-family:var(--mono); font-size:12.5px; color:var(--muted); margin-bottom:20px; }
+.bench-grid{ display:flex; flex-direction:column; gap:22px; }
+.bench-row .plabel{ font-family:var(--mono); font-size:13px; color:var(--text); margin-bottom:8px; display:flex; gap:10px; align-items:baseline; }
+.bench-row .plabel span{ color:var(--muted); font-size:11.5px; }
+.bars{ display:flex; flex-direction:column; gap:7px; }
+.barline{ display:grid; grid-template-columns:110px 1fr 70px; align-items:center; gap:10px; }
+.barline .lbl{ font-family:var(--mono); font-size:11.5px; color:var(--muted); }
+.barline .track{ background:var(--panel-2); border-radius:4px; overflow:hidden; height:16px; border:1px solid var(--grid); }
+.barline .fill{ height:100%; border-radius:4px 0 0 4px; transition:width .6s ease; }
+.barline .fill.naive{ background:var(--naive); }
+.barline .fill.kmp{ background:var(--kmp); }
+.barline .fill.rk{ background:var(--rk); }
+.barline .val{ font-family:var(--mono); font-size:12px; color:var(--text); text-align:right; }
+
+table.benchtable{ width:100%; border-collapse:collapse; margin-top:28px; font-family:var(--mono); font-size:13px; }
+table.benchtable th, table.benchtable td{ padding:9px 10px; border-bottom:1px solid var(--grid); text-align:right; }
+table.benchtable th:first-child, table.benchtable td:first-child{ text-align:left; }
+table.benchtable th{ color:var(--muted); font-weight:500; font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; }
+table.benchtable td.win{ color:var(--amber); font-weight:600; }
+
+/* ---------- FOOTER ---------- */
+footer{ padding:32px 24px 60px; text-align:center; }
+footer p{ font-family:var(--mono); font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Live algorithm race</p>
+    <h1>Three ways to find a needle in a haystack: <span class="hl-naive">Naive</span>, <span class="hl-kmp">KMP</span>, and <span class="hl-rk">Rabin-Karp</span> — run side by side, comparison by comparison.</h1>
+    <p class="sub">Same text. Same pattern. Every character check counted in real time, so you can watch exactly where each algorithm wastes work — and where it doesn't.</p>
+    <div class="meta">
+      <span>Text length: <b id="metaTextLen">16</b></span>
+      <span>Pattern length: <b id="metaPatLen">4</b></span>
+      <span>Alphabet: <b>any string</b></span>
+    </div>
+  </div>
+</div>
+
+<section id="race">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="tag">01 — The Race</p>
+      <h2>Watch each algorithm think</h2>
+      <p>Set your own text and pattern, then step through — or press play and let all three run at once. The pattern row slides under the text to show exactly which window is being tested.</p>
+    </div>
+
+    <div class="controls">
+      <div class="field">
+        <label for="textInput">Text</label>
+        <input type="text" id="textInput" value="AABAACAADAABAABA" maxlength="60" spellcheck="false">
+      </div>
+      <div class="field pattern">
+        <label for="patternInput">Pattern</label>
+        <input type="text" id="patternInput" value="AABA" maxlength="12" spellcheck="false">
+      </div>
+      <div class="btnrow">
+        <div class="speedfield">
+          <span>speed</span>
+          <input type="range" id="speedRange" min="1" max="10" value="5">
+        </div>
+        <button id="stepBtn">Step</button>
+        <button id="playBtn" class="primary">▶ Play</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </div>
+    <div class="errmsg" id="errMsg"></div>
+
+    <div class="lane naive">
+      <div class="lane-top">
+        <div class="lane-title">NAIVE <span class="full">— brute force, one window at a time</span></div>
+        <div class="lane-stats">comparisons <b class="cmp-num" id="naiveCmp">0</b> &nbsp;·&nbsp; window <b id="naiveWin">–</b></div>
+      </div>
+      <div class="scrollrow"><div class="rows" id="naiveRows"></div></div>
+      <div class="log" id="naiveLog">Press <b>Step</b> or <b>Play</b> to begin.</div>
+      <div class="matchlist" id="naiveMatches"></div>
+    </div>
+
+    <div class="lane kmp">
+      <div class="lane-top">
+        <div class="lane-title">KMP <span class="full">— remembers past matches, never rechecks them</span></div>
+        <div class="lane-stats">comparisons <b class="cmp-num" id="kmpCmp">0</b> &nbsp;·&nbsp; window <b id="kmpWin">–</b></div>
+      </div>
+      <div class="scrollrow"><div class="rows" id="kmpRows"></div></div>
+      <div class="log" id="kmpLog">Press <b>Step</b> or <b>Play</b> to begin.</div>
+      <div class="matchlist" id="kmpMatches"></div>
+    </div>
+
+    <div class="lane rk">
+      <div class="lane-top">
+        <div class="lane-title">RABIN-KARP <span class="full">— hashes a window before ever comparing characters</span></div>
+        <div class="lane-stats">comparisons <b class="cmp-num" id="rkCmp">0</b> &nbsp;·&nbsp; window <b id="rkWin">–</b></div>
+      </div>
+      <div class="scrollrow"><div class="rows" id="rkRows"></div></div>
+      <div class="log" id="rkLog">Press <b>Step</b> or <b>Play</b> to begin.</div>
+      <div class="matchlist" id="rkMatches"></div>
+    </div>
+
+    <div class="banner" id="winnerBanner"></div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="tag">02 — How each one thinks</p>
+      <h2>The strategy behind each comparison count</h2>
+    </div>
+    <div class="cards">
+      <div class="card" style="--c:var(--naive)">
+        <h3>Naive</h3>
+        <p>Slides the pattern one position at a time and compares characters left to right, forgetting everything the moment it hits a mismatch. Simple, but on repetitive text it re-checks the same characters over and over.</p>
+        <div class="complexity">
+          <div>Best case <b>O(n)</b></div>
+          <div>Worst case <b>O(n·m)</b></div>
+          <div>Extra memory <b>O(1)</b></div>
+        </div>
+      </div>
+      <div class="card" style="--c:var(--kmp)">
+        <h3>Knuth-Morris-Pratt</h3>
+        <p>Pre-computes a "longest prefix that is also a suffix" table (LPS) for the pattern. On a mismatch, it uses that table to jump the pattern forward without ever re-comparing a character it has already matched.</p>
+        <div class="complexity">
+          <div>Preprocessing <b>O(m)</b></div>
+          <div>Search <b>O(n + m)</b></div>
+          <div>Extra memory <b>O(m)</b></div>
+        </div>
+      </div>
+      <div class="card" style="--c:var(--rk)">
+        <h3>Rabin-Karp</h3>
+        <p>Hashes the pattern once, then slides a rolling hash across the text — updating it in O(1) per step instead of recomputing from scratch. Characters are only compared when two hashes collide.</p>
+        <div class="complexity">
+          <div>Average case <b>O(n + m)</b></div>
+          <div>Worst case <b>O(n·m)</b></div>
+          <div>Extra memory <b>O(1)</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="benchmark">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="tag">03 — Benchmark</p>
+      <h2>Comparison counts on a random 3,000-character text</h2>
+      <p>Same benchmark idea as the original script: a random text over the alphabet A–D, searched for four patterns of increasing length. Lower is better — fewer comparisons means less wasted work.</p>
+    </div>
+    <div class="benchmeta" id="benchMeta">Generating random text…</div>
+    <div class="bench-grid" id="benchGrid"></div>
+    <table class="benchtable" id="benchTable">
+      <thead><tr><th>Pattern</th><th>Naive</th><th>KMP</th><th>Rabin-Karp</th></tr></thead>
+      <tbody id="benchTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>Built to visualize three classic string-matching algorithms — naive search, Knuth-Morris-Pratt, and Rabin-Karp — comparison by comparison.</p>
+</footer>
+
+<script>
+// ---------------- Algorithms with full trace ---------------- //
+function naiveTrace(text, pattern){
+  const n=text.length, m=pattern.length;
+  const events=[]; let comparisons=0; const matches=[];
+  for(let i=0;i<=n-m;i++){
+    let j=0;
+    while(j<m){
+      comparisons++;
+      const match = text[i+j]===pattern[j];
+      events.push({type:'compare', i, j, pos:i+j, match, comparisons});
+      if(!match) break;
+      j++;
+    }
+    if(j===m){ matches.push(i); events.push({type:'match', i, comparisons}); }
+  }
+  return {events, comparisons, matches};
+}
+
+function computeLPS(pattern){
+  const m=pattern.length; const lps=new Array(m).fill(0);
+  let length=0, i=1;
+  while(i<m){
+    if(pattern[i]===pattern[length]){ length++; lps[i]=length; i++; }
+    else if(length!==0){ length=lps[length-1]; }
+    else { lps[i]=0; i++; }
+  }
+  return lps;
+}
+
+function kmpTrace(text, pattern){
+  const n=text.length, m=pattern.length;
+  const lps=computeLPS(pattern);
+  const events=[]; let comparisons=0; const matches=[];
+  let i=0, j=0;
+  while(i<n){
+    comparisons++;
+    const match = pattern[j]===text[i];
+    events.push({type:'compare', i, j, match, comparisons});
+    if(match){ i++; j++; }
+    if(j===m){
+      matches.push(i-j);
+      events.push({type:'match', i:i-j, comparisons});
+      j=lps[j-1];
+    } else if(i<n && !match){
+      if(j!==0){
+        const from=j;
+        j=lps[j-1];
+        events.push({type:'jump', from, to:j, comparisons});
+      } else {
+        i++;
+      }
+    }
+  }
+  return {events, comparisons, matches, lps};
+}
+
+function rabinKarpTrace(text, pattern, q=101){
+  const n=text.length, m=pattern.length, d=256;
+  let h=1;
+  for(let k=0;k<m-1;k++) h=(h*d)%q;
+  let patternHash=0, textHash=0;
+  const events=[]; let comparisons=0; const matches=[];
+  for(let i=0;i<m;i++){
+    patternHash=(d*patternHash+pattern.charCodeAt(i))%q;
+    textHash=(d*textHash+text.charCodeAt(i))%q;
+  }
+  for(let s=0;s<=n-m;s++){
+    const hashMatch = patternHash===textHash;
+    events.push({type:'hashcheck', s, hashMatch, comparisons});
+    if(hashMatch){
+      let ok=true;
+      for(let k=0;k<m;k++){
+        comparisons++;
+        const match = text[s+k]===pattern[k];
+        events.push({type:'compare', s, k, match, comparisons});
+        if(!match){ ok=false; break; }
+      }
+      if(ok){ matches.push(s); events.push({type:'match', s, comparisons}); }
+    }
+    if(s<n-m){
+      textHash=(d*(textHash-text.charCodeAt(s)*h)+text.charCodeAt(s+m))%q;
+      if(textHash<0) textHash+=q;
+    }
+  }
+  return {events, comparisons, matches};
+}
+
+// ---------------- Lane renderer ---------------- //
+class Lane{
+  constructor(key, accentClass){
+    this.key=key;
+    this.rowsEl=document.getElementById(key+'Rows');
+    this.cmpEl=document.getElementById(key+'Cmp');
+    this.winEl=document.getElementById(key+'Win');
+    this.logEl=document.getElementById(key+'Log');
+    this.matchEl=document.getElementById(key+'Matches');
+  }
+  setup(text, pattern){
+    this.text=text; this.pattern=pattern;
+    this.rowsEl.innerHTML='';
+    const idxRow=document.createElement('div'); idxRow.className='charrow';
+    const textRow=document.createElement('div'); textRow.className='charrow';
+    const patRow=document.createElement('div'); patRow.className='charrow';
+    for(let k=0;k<text.length;k++){
+      const idxCell=document.createElement('div'); idxCell.className='cell idx'; idxCell.textContent=k%5===0?k:''; idxRow.appendChild(idxCell);
+      const c=document.createElement('div'); c.className='cell'; c.textContent=text[k]; c.dataset.i=k; textRow.appendChild(c);
+      const p=document.createElement('div'); p.className='cell p-empty'; p.dataset.i=k; patRow.appendChild(p);
+    }
+    this.rowsEl.appendChild(idxRow);
+    this.rowsEl.appendChild(textRow);
+    this.rowsEl.appendChild(patRow);
+    this.textCells = Array.from(textRow.children);
+    this.patCells = Array.from(patRow.children);
+    this.cmpEl.textContent='0';
+    this.winEl.textContent='–';
+    this.logEl.innerHTML='Press <b>Step</b> or <b>Play</b> to begin.';
+    this.matchEl.innerHTML='';
+    this.finished=false;
+    this.matches=[];
+  }
+  clearCursorClasses(){
+    this.textCells.forEach(c=>c.classList.remove('cur','hit','miss'));
+  }
+  showPatternWindow(offset){
+    this.patCells.forEach((p,k)=>{
+      const rel = k-offset;
+      if(rel>=0 && rel<this.pattern.length){
+        p.className='cell cur';
+        p.textContent=this.pattern[rel];
+      } else {
+        p.className='cell p-empty';
+        p.textContent='';
+      }
+    });
+  }
+  markMatched(offset){
+    for(let k=0;k<this.pattern.length;k++){
+      if(this.textCells[offset+k]) this.textCells[offset+k].classList.add('matched');
+    }
+    this.matches.push(offset);
+    const pill=document.createElement('span');
+    pill.className='pill';
+    pill.textContent='index '+offset;
+    this.matchEl.appendChild(pill);
+  }
+}
+
+// ---------------- Controller ---------------- //
+const naiveLane = new Lane('naive');
+const kmpLane = new Lane('kmp');
+const rkLane = new Lane('rk');
+
+let state = null; // {naive:{events,ptr}, kmp:{...}, rk:{...}}
+let playing=false;
+let timer=null;
+
+function buildState(text, pattern){
+  const nT = naiveTrace(text, pattern);
+  const kT = kmpTrace(text, pattern);
+  const rT = rabinKarpTrace(text, pattern);
+  return {
+    text, pattern,
+    naive: {trace:nT, ptr:0},
+    kmp: {trace:kT, ptr:0},
+    rk: {trace:rT, ptr:0}
+  };
+}
+
+function resetAll(){
+  const text = document.getElementById('textInput').value || 'AABAACAADAABAABA';
+  const pattern = document.getElementById('patternInput').value || 'AABA';
+  document.getElementById('errMsg').textContent='';
+  if(pattern.length===0){ document.getElementById('errMsg').textContent='Pattern cannot be empty.'; return; }
+  if(pattern.length>text.length){ document.getElementById('errMsg').textContent='Pattern is longer than the text.'; return; }
+  document.getElementById('metaTextLen').textContent=text.length;
+  document.getElementById('metaPatLen').textContent=pattern.length;
+  naiveLane.setup(text, pattern);
+  kmpLane.setup(text, pattern);
+  rkLane.setup(text, pattern);
+  state = buildState(text, pattern);
+  document.getElementById('winnerBanner').classList.remove('show');
+  stopPlaying();
+  updateButtons();
+}
+
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+function applyNaiveEvent(ev){
+  const lane=naiveLane;
+  lane.clearCursorClasses();
+  if(ev.type==='compare'){
+    lane.showPatternWindow(ev.i);
+    lane.textCells[ev.pos].classList.add(ev.match?'hit':'miss');
+    lane.cmpEl.textContent = ev.comparisons;
+    lane.winEl.textContent = 'i='+ev.i;
+    lane.logEl.innerHTML = `i=<b>${ev.i}</b>, j=<b>${ev.j}</b>: text[${ev.pos}]='${esc(lane.text[ev.pos])}' vs pattern[${ev.j}]='${esc(lane.pattern[ev.j])}' → `
+      + (ev.match ? `<span class="ok">match</span>` : `<span class="bad">mismatch, shift window by 1</span>`);
+  } else if(ev.type==='match'){
+    lane.markMatched(ev.i);
+    lane.logEl.innerHTML = `<span class="ok">Full match found at index ${ev.i}</span>`;
+  }
+}
+
+function applyKmpEvent(ev){
+  const lane=kmpLane;
+  lane.clearCursorClasses();
+  if(ev.type==='compare'){
+    const offset = ev.i-ev.j;
+    lane.showPatternWindow(offset);
+    lane.textCells[ev.i].classList.add(ev.match?'hit':'miss');
+    lane.cmpEl.textContent = ev.comparisons;
+    lane.winEl.textContent = 'i='+ev.i+', j='+ev.j;
+    lane.logEl.innerHTML = `text[${ev.i}]='${esc(lane.text[ev.i])}' vs pattern[${ev.j}]='${esc(lane.pattern[ev.j])}' → `
+      + (ev.match ? `<span class="ok">match, advance both pointers</span>` : `<span class="bad">mismatch</span>`);
+  } else if(ev.type==='jump'){
+    lane.logEl.innerHTML = `No prefix-suffix overlap needed at j=${ev.from} → <b>LPS jump</b> to j=<b>${ev.to}</b> (no re-comparison of already-matched characters)`;
+  } else if(ev.type==='match'){
+    lane.markMatched(ev.i);
+    lane.logEl.innerHTML = `<span class="ok">Full match found at index ${ev.i}</span> — resume via LPS table`;
+  }
+}
+
+function applyRkEvent(ev){
+  const lane=rkLane;
+  lane.clearCursorClasses();
+  if(ev.type==='hashcheck'){
+    lane.showPatternWindow(ev.s);
+    lane.winEl.textContent = 's='+ev.s;
+    lane.cmpEl.textContent = ev.comparisons;
+    lane.logEl.innerHTML = ev.hashMatch
+      ? `Window at s=<b>${ev.s}</b>: rolling hash <span class="ok">matches</span> pattern hash → verifying characters…`
+      : `Window at s=<b>${ev.s}</b>: rolling hash <span class="bad">differs</span> from pattern hash → skip, <b>zero character comparisons</b>`;
+  } else if(ev.type==='compare'){
+    lane.showPatternWindow(ev.s);
+    lane.textCells[ev.s+ev.k].classList.add(ev.match?'hit':'miss');
+    lane.cmpEl.textContent = ev.comparisons;
+    lane.logEl.innerHTML = `Verifying: text[${ev.s+ev.k}]='${esc(lane.text[ev.s+ev.k])}' vs pattern[${ev.k}]='${esc(lane.pattern[ev.k])}' → `
+      + (ev.match ? `<span class="ok">match</span>` : `<span class="bad">hash collision, not a real match</span>`);
+  } else if(ev.type==='match'){
+    lane.markMatched(ev.s);
+    lane.logEl.innerHTML = `<span class="ok">Full match confirmed at index ${ev.s}</span>`;
+  }
+}
+
+function stepLane(name, lane, applyFn){
+  const s = state[name];
+  if(s.ptr >= s.trace.events.length){
+    if(!lane.finished){
+      lane.finished=true;
+      lane.logEl.innerHTML = `<span class="ok">Finished.</span> Total comparisons: <b>${s.trace.comparisons}</b>, matches: <b>${s.trace.matches.length}</b>`;
+      lane.cmpEl.textContent = s.trace.comparisons;
+    }
+    return false;
+  }
+  const ev = s.trace.events[s.ptr];
+  applyFn(ev);
+  s.ptr++;
+  return true;
+}
+
+function stepAll(){
+  const a = stepLane('naive', naiveLane, applyNaiveEvent);
+  const b = stepLane('kmp', kmpLane, applyKmpEvent);
+  const c = stepLane('rk', rkLane, applyRkEvent);
+  updateButtons();
+  if(!a && !b && !c){
+    stopPlaying();
+    announceWinner();
+  }
+}
+
+function announceWinner(){
+  const results = [
+    {name:'Naive', cmp: state.naive.trace.comparisons, color:'var(--naive)'},
+    {name:'KMP', cmp: state.kmp.trace.comparisons, color:'var(--kmp)'},
+    {name:'Rabin-Karp', cmp: state.rk.trace.comparisons, color:'var(--rk)'}
+  ];
+  results.sort((x,y)=>x.cmp-y.cmp);
+  const banner = document.getElementById('winnerBanner');
+  banner.innerHTML = `🏁 Fewest comparisons: <b style="color:${results[0].color}">${results[0].name}</b> (${results[0].cmp}) — `
+    + results.slice(1).map(r=>`${r.name} used ${r.cmp}`).join(', ');
+  banner.classList.add('show');
+}
+
+function updateButtons(){
+  const allDone = state.naive.ptr>=state.naive.trace.events.length
+    && state.kmp.ptr>=state.kmp.trace.events.length
+    && state.rk.ptr>=state.rk.trace.events.length;
+  document.getElementById('stepBtn').disabled = allDone;
+  document.getElementById('playBtn').disabled = allDone;
+}
+
+function stopPlaying(){
+  playing=false;
+  clearInterval(timer);
+  document.getElementById('playBtn').textContent='▶ Play';
+}
+
+function togglePlay(){
+  if(playing){ stopPlaying(); return; }
+  playing=true;
+  document.getElementById('playBtn').textContent='⏸ Pause';
+  const speed = 11 - Number(document.getElementById('speedRange').value);
+  timer = setInterval(()=>{ stepAll(); }, speed*90);
+}
+
+document.getElementById('stepBtn').addEventListener('click', ()=>{ stopPlaying(); stepAll(); });
+document.getElementById('playBtn').addEventListener('click', togglePlay);
+document.getElementById('resetBtn').addEventListener('click', resetAll);
+document.getElementById('textInput').addEventListener('change', resetAll);
+document.getElementById('patternInput').addEventListener('change', resetAll);
+document.getElementById('speedRange').addEventListener('input', ()=>{
+  if(playing){ stopPlaying(); togglePlay(); }
+});
+
+resetAll();
+
+// ---------------- Benchmark section ---------------- //
+function seededRandom(seed){
+  let s = seed;
+  return function(){
+    s = (s*9301+49297) % 233280;
+    return s/233280;
+  };
+}
+function randomText(len, alphabet, rand){
+  let out='';
+  for(let i=0;i<len;i++) out += alphabet[Math.floor(rand()*alphabet.length)];
+  return out;
+}
+
+(function runBenchmark(){
+  const rand = seededRandom(42);
+  const textLarge = randomText(3000, 'ABCD', rand);
+  const patterns = ['AB','ABCD','ABCDAB','ABCDABCD'];
+  document.getElementById('benchMeta').innerHTML = `Random text of <b>${textLarge.length.toLocaleString()}</b> characters over alphabet A–D, generated once and reused for every pattern below.`;
+
+  const results = patterns.map(p=>({
+    pattern:p,
+    naive: naiveTrace(textLarge,p).comparisons,
+    kmp: kmpTrace(textLarge,p).comparisons,
+    rk: rabinKarpTrace(textLarge,p).comparisons
+  }));
+
+  const grid = document.getElementById('benchGrid');
+  results.forEach(r=>{
+    const max = Math.max(r.naive, r.kmp, r.rk);
+    const row = document.createElement('div');
+    row.className='bench-row';
+    row.innerHTML = `
+      <div class="plabel">Pattern "<span style="color:var(--amber)">${esc(r.pattern)}</span>" <span>(length ${r.pattern.length})</span></div>
+      <div class="bars">
+        <div class="barline"><div class="lbl">Naive</div><div class="track"><div class="fill naive" style="width:0%"></div></div><div class="val">${r.naive.toLocaleString()}</div></div>
+        <div class="barline"><div class="lbl">KMP</div><div class="track"><div class="fill kmp" style="width:0%"></div></div><div class="val">${r.kmp.toLocaleString()}</div></div>
+        <div class="barline"><div class="lbl">Rabin-Karp</div><div class="track"><div class="fill rk" style="width:0%"></div></div><div class="val">${r.rk.toLocaleString()}</div></div>
+      </div>
+    `;
+    grid.appendChild(row);
+    requestAnimationFrame(()=>{
+      const fills = row.querySelectorAll('.fill');
+      fills[0].style.width = (r.naive/max*100)+'%';
+      fills[1].style.width = (r.kmp/max*100)+'%';
+      fills[2].style.width = (r.rk/max*100)+'%';
+    });
+  });
+
+  const tbody = document.getElementById('benchTableBody');
+  results.forEach(r=>{
+    const min = Math.min(r.naive, r.kmp, r.rk);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>"${esc(r.pattern)}"</td>
+      <td class="${r.naive===min?'win':''}">${r.naive.toLocaleString()}</td>
+      <td class="${r.kmp===min?'win':''}">${r.kmp.toLocaleString()}</td>
+      <td class="${r.rk===min?'win':''}">${r.rk.toLocaleString()}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>
